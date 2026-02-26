@@ -188,6 +188,33 @@ class AutoSetFileLinksUtilTest {
     class linkAssociatedFiles {
 
         @Nested
+        @DisplayName("whenFileAlreadyExists")
+        class whenFileAlreadyExists {
+
+            @Test
+            @DisplayName("doNotChangeLinkWhenFileExistsAtLinkedLocation")
+            void doNotChangeLinkWhenFileExistsAtLinkedLocation(@TempDir Path root) throws Exception {
+                when(AutoSetFileLinksUtilTest.this.databaseContext.getFileDirectories(any())).thenReturn(Collections.singletonList(root));
+
+                String fileName = "TestFile.pdf";
+                Path testFile = root.resolve(fileName);
+                Files.createFile(testFile);
+
+                BibEntry testEntry = new BibEntry(StandardEntryType.Article);
+                testEntry.setCitationKey("Test2026");
+                LinkedFile existingLink = new LinkedFile("Source", fileName, "PDF");
+                testEntry.setFiles(Collections.singletonList(existingLink));
+
+                AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(databaseContext, externalApplicationsPreferences, filePreferences, autoLinkPrefs);
+
+                util.linkAssociatedFiles(List.of(testEntry), onLinkedFilesUpdated);
+
+                assertEquals(1, testEntry.getFiles().size(), "Should still have exactly one file linked");
+                assertEquals(fileName, testEntry.getFiles().get(0).getLink(), "The link path should not have changed");
+            }
+        }
+
+        @Nested
         @DisplayName("byCitationKeyOnly")
         class byCitationKeyOnly {
 
