@@ -914,7 +914,7 @@ class AutoSetFileLinksUtilTest {
         assertEquals(1, foundFiles.size(), "Should discover exactly one matching file on the hard disk.");
 
         LinkedFile discoveredFile = foundFiles.iterator().next();
-
-        assertEquals(citationKey + ".pdf", discoveredFile.getLink(), "The discovered file link should match the created filename.");
+        // The discovered file link should match the created filename
+        assertEquals(citationKey + ".pdf", discoveredFile.getLink());
     }
 }
