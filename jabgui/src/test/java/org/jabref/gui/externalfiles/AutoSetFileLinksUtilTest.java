@@ -874,37 +874,30 @@ class AutoSetFileLinksUtilTest {
     }
 
     @Test
-    @DisplayName("TEST A: findAssociatedNotLinkedFiles discovers matching local file when entry has no file")
     void IssueA_discoversLocalFile(@TempDir Path tempDir) throws Exception {
-        // Define the citation key =  unique ID JabRef uses for a publication
         // The system will look for a file named TestName.pdf
         String citationKey = "TestName";
 
         // Create a BibEntry object - represents a single publication (like a row in a database)
-        // We tell it this is an "Article" and assign it our citation key
         // We do NOT use .withFiles() in main file, which means this entry currently has 0 files attached to it
         BibEntry entry = new BibEntry(StandardEntryType.Article)
                 .withCitationKey(citationKey);
 
-        // JUnit has 'tempDir' (a temporary safe folder just for this test)
         // We define the exact path where we want to place our fake PDF file
-        Path dummyPdf = tempDir.resolve(citationKey + ".pdf");
+        Path expectedPdf = tempDir.resolve(citationKey + ".pdf");
 
-        // Actually create the physical (but empty) file on the temp. hard drive
         // Now TestName.pdf will exist in the folder.
-        Files.createFile(dummyPdf);
+        Files.createFile(expectedPdf);
 
-        // When the utility "asks" the database to find the file, we force it to return our temporary test folder
         when(databaseContext.getFileDirectories(filePreferences)).thenReturn(List.of(tempDir));
-        // Tell the auto-link preferences to accept any file name format using .*
         when(autoLinkPrefs.getRegularExpression()).thenReturn(".*");
 
         // Create a fake ExternalFileType object. The utility uses this to know what file extensions are allowed
         ExternalFileType pdfFileType = mock(ExternalFileType.class);
+        
         // Force our fake file type to act exactly like a PDF
         when(pdfFileType.getExtension()).thenReturn("pdf");
         when(pdfFileType.getName()).thenReturn("PDF");
-        // When the utility asks JabRef's preferences what file types are allowed, we give it a JavaFX list containing only our fake PDF type
         when(externalApplicationsPreferences.getExternalFileTypes()).thenReturn(javafx.collections.FXCollections.observableSet(pdfFileType));
 
         // Now that all our fake settings (mocks) are ready, we create the actual AutoSetFileLinksUtil
@@ -915,18 +908,13 @@ class AutoSetFileLinksUtilTest {
                 filePreferences,
                 autoLinkPrefs
         );
-        // We feed our empty BibEntry into the discovery method.
-        // The utility will look at the entry's citation key (TestName), scan the tempDir and try to find a match
+
         Collection<LinkedFile> foundFiles = util.findAssociatedNotLinkedFiles(entry);
 
-        // Check that the utility found exactly 1 file. If it found 0 or 2, the test fails and prints the message.
         assertEquals(1, foundFiles.size(), "Should discover exactly one matching file on the hard disk.");
-        // Get that 1 file out of the collection so we can inspect it.
+
         LinkedFile discoveredFile = foundFiles.iterator().next();
 
-        // Verify that the file it found is actually the one we created.
-        // JabRef just keeps the relative filename so we expect exactly TestName.pdf
         assertEquals(citationKey + ".pdf", discoveredFile.getLink(), "The discovered file link should match the created filename.");
     }
-    // omd
 }
