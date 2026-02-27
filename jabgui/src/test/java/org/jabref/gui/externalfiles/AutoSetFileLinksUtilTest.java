@@ -12,6 +12,7 @@ import java.util.function.BiConsumer;
 
 import javafx.collections.FXCollections;
 
+import org.jabref.gui.externalfiletype.ExternalFileType;
 import org.jabref.gui.externalfiletype.ExternalFileTypes;
 import org.jabref.gui.frame.ExternalApplicationsPreferences;
 import org.jabref.logic.FilePreferences;
@@ -927,4 +928,5 @@ class AutoSetFileLinksUtilTest {
         // JabRef just keeps the relative filename so we expect exactly TestName.pdf
         assertEquals(citationKey + ".pdf", discoveredFile.getLink(), "The discovered file link should match the created filename.");
     }
+    // omd
 }
