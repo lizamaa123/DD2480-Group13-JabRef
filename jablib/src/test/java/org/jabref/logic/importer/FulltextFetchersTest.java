@@ -85,27 +85,28 @@ class FulltextFetchersTest {
         BibEntry entry = new BibEntry()
                 .withField(StandardField.TITLE, "'To See or Not to See?' How Do Eye Movements Change Within Immersive Driving Environments");
 
-        //dummy pdf
+        //dummy pdf, has to be a real PDF because FulltextFetchers checks if the URL actually points to a PDF file.
         URL expectedPdf = URLUtil.create("http://docs.oasis-open.org/wsbpel/2.0/OS/wsbpel-v2.0-OS.pdf");
 
         // Mock fetcher that only returns a PDF if the entry has a DOI
         // (proving CrossRef actually derived it)
         FulltextFetcher mockFetcher = mock(FulltextFetcher.class);
-        when(mockFetcher.getTrustLevel()).thenReturn(TrustLevel.SOURCE);
+        when(mockFetcher.getTrustLevel()).thenReturn(TrustLevel.SOURCE); //when getTrustLevel() is called, return highest trust lvl  
         when(mockFetcher.findFullText(argThat(e ->
                 e.getField(StandardField.DOI).isPresent()
-        ))).thenReturn(Optional.of(expectedPdf));
+        ))).thenReturn(Optional.of(expectedPdf)); //when findFullText() is called with an entry that has a DOI, return the dummy PDF
 
+        //Creates the orchestrator. Takes a set of fetchers and uses them to find the full text PDF.
         FulltextFetchers fetchers = new FulltextFetchers(Set.of(mockFetcher));
-        Optional<URL> result = fetchers.findFullTextPDF(entry);
+        Optional<URL> result = fetchers.findFullTextPDF(entry); //find the full text PDF for the entry
 
         //check if the URL is the same as expected
         assertEquals(Optional.of(expectedPdf), result);
 
         // Verify the exact DOI that was derived
-        ArgumentCaptor<BibEntry> captor = ArgumentCaptor.forClass(BibEntry.class);
-        verify(mockFetcher).findFullText(captor.capture());
-        String derivedDoi = captor.getValue().getField(StandardField.DOI).orElse("");
+        ArgumentCaptor<BibEntry> captor = ArgumentCaptor.forClass(BibEntry.class); //captor is used to capture the entry that was passed to findFullText()
+        verify(mockFetcher).findFullText(captor.capture()); //records the BIBentry passed to findFullText()
+        String derivedDoi = captor.getValue().getField(StandardField.DOI).orElse(""); 
         assertEquals("10.1145/2667239.2667268", derivedDoi.toLowerCase(Locale.ENGLISH));
     }
 }
