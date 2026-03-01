@@ -873,6 +873,52 @@ class AutoSetFileLinksUtilTest {
         }
     }
     @Test
+    void IssueA_discoversLocalFile(@TempDir Path tempDir) throws Exception {
+        // The system will look for a file named TestName.pdf
+        String citationKey = "TestName";
+
+        // Create a BibEntry object - represents a single publication (like a row in a database)
+        // We do NOT use .withFiles() in main file, which means this entry currently has 0 files attached to it
+        BibEntry entry = new BibEntry(StandardEntryType.Article)
+                .withCitationKey(citationKey);
+
+        // We define the exact path where we want to place our fake PDF file
+        Path expectedPdf = tempDir.resolve(citationKey + ".pdf");
+
+        // Now TestName.pdf will exist in the folder.
+        Files.createFile(expectedPdf);
+
+        when(databaseContext.getFileDirectories(filePreferences)).thenReturn(List.of(tempDir));
+        when(autoLinkPrefs.getRegularExpression()).thenReturn(".*");
+
+        // Create a fake ExternalFileType object. The utility uses this to know what file extensions are allowed
+        ExternalFileType pdfFileType = mock(ExternalFileType.class);
+        
+        // Force our fake file type to act exactly like a PDF
+
+        when(pdfFileType.getExtension()).thenReturn("pdf");
+        when(pdfFileType.getName()).thenReturn("PDF");
+        when(externalApplicationsPreferences.getExternalFileTypes()).thenReturn(javafx.collections.FXCollections.observableSet(pdfFileType));
+
+        // Now that all our fake settings (mocks) are ready, we create the actual AutoSetFileLinksUtil
+        // We pass in all the mocked preferences so the utility thinks it is running inside the real JabRef application
+        AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(
+                databaseContext,
+                externalApplicationsPreferences,
+                filePreferences,
+                autoLinkPrefs
+        );
+
+        Collection<LinkedFile> foundFiles = util.findAssociatedNotLinkedFiles(entry);
+
+        assertEquals(1, foundFiles.size(), "Should discover exactly one matching file on the hard disk.");
+
+        LinkedFile discoveredFile = foundFiles.iterator().next();
+        // The discovered file link should match the created filename
+        assertEquals(citationKey + ".pdf", discoveredFile.getLink());
+    }
+
+    @Test
     void issueH_ignoresAlreadyLinkedFile(@TempDir Path tempDir) throws Exception {
         String citationKey = "TestName";
 
