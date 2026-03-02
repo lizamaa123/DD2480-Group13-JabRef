@@ -19,6 +19,7 @@ import org.jabref.logic.util.io.AutoLinkPreferences;
 import org.jabref.model.database.BibDatabaseContext;
 import org.jabref.model.entry.BibEntry;
 import org.jabref.model.entry.LinkedFile;
+import org.jabref.model.entry.field.StandardField;
 import org.jabref.model.entry.types.StandardEntryType;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -870,5 +871,25 @@ class AutoSetFileLinksUtilTest {
                 assertEquals(expect, actual);
             }
         }
+    }
+
+    // Scenario D (#380)
+    // BibEntry with no file field, no file on disk, no DOI, DOI cannot be determined
+    // Expected: no file is linked
+    @Test
+    void findAssociatedNotLinkedFilesReturnsEmptyWhenNoFileAndNoDoi(@TempDir Path tempDir) throws Exception {
+        // Directory with no files
+        when(databaseContext.getFileDirectories(any())).thenReturn(List.of(tempDir));
+
+        // No file field, no DOI, and title is nonsense so DOI cannot be derived from it
+        BibEntry entryD = new BibEntry(StandardEntryType.Article)
+                .withCitationKey("UnmatchableKey")
+                .withField(StandardField.TITLE, "xyzzy12345nonexistent");
+
+        // Pass in all the mocked preferences so the utility runs as if inside the real JabRef application
+        AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(databaseContext, externalApplicationsPreferences, filePreferences, autoLinkPrefs);
+
+        // Nothing to find so result should be empty
+        assertEquals(List.of(), util.findAssociatedNotLinkedFiles(entryD));
     }
 }
