@@ -183,10 +183,49 @@ class AutoSetFileLinksUtilTest {
         assertEquals(expected, Set.copyOf(matchedFiles));
     }
 
-    /// [utest->req~logic.externalfiles.file-transfer.auto-link~1]
+
     @Nested
     @DisplayName("linkAssociatedFiles")
     class linkAssociatedFiles {
+
+        @Nested
+        @DisplayName("whenFileAlreadyExists")
+        class whenFileAlreadyExists {
+
+            /*
+            * Test verifies that the auto-link logic in Jabref leaves existing and valid data alone.
+             */
+            @Test
+            @DisplayName("doNotChangeLinkWhenFileExistsAtLinkedLocation")
+            void doNotChangeLinkWhenFileExistsAtLinkedLocation(@TempDir Path root) throws Exception {
+                // Mock a database to look for PDFS & create a file on the disk
+                when(AutoSetFileLinksUtilTest.this.databaseContext.getFileDirectories(any())).thenReturn(Collections.singletonList(root));
+
+                String fileName = "TestFile.pdf";
+                Path testFile = root.resolve(fileName);
+                Files.createFile(testFile);
+
+                // Create a bibliography entry, entry has link and file exists at that link
+                BibEntry testEntry = new BibEntry(StandardEntryType.Article);
+                testEntry.setCitationKey("Test2026");
+                LinkedFile existingLink = new LinkedFile("Source", fileName, "PDF");
+                testEntry.setFiles(Collections.singletonList(existingLink));
+
+                AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(databaseContext, externalApplicationsPreferences, filePreferences, autoLinkPrefs);
+
+                // Verify that the JabRef didn't add a second copy of the same file or change path
+                util.linkAssociatedFiles(List.of(testEntry), onLinkedFilesUpdated);
+
+                assertEquals(1, testEntry.getFiles().size(), "Should still have exactly one file linked");
+                assertEquals(fileName, testEntry.getFiles().get(0).getLink(), "The link path should not have changed");
+
+                // Check files on the hard drive that should be linked to this entry, test file matches the entry's critera but is already linked.
+                // Hence result should be empty, otherwise Jabref would suggest user to add a file they already have.
+                Collection<LinkedFile> result = util.findAssociatedNotLinkedFiles(testEntry);
+
+                assertEquals(0, result.size(), "Should not suggest a file that is already correctly linked");
+            }
+        }
 
         @Nested
         @DisplayName("byCitationKeyOnly")
