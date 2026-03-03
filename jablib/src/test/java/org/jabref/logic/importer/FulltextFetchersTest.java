@@ -5,11 +5,13 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Locale;
 
 import org.jabref.logic.importer.fetcher.TrustLevel;
 import org.jabref.logic.util.URLUtil;
 import org.jabref.model.entry.BibEntry;
 import org.jabref.model.entry.field.StandardField;
+import org.jabref.model.entry.types.StandardEntryType;
 import org.jabref.testutils.category.FetcherTest;
 
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,9 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.argThat;
+import org.mockito.ArgumentCaptor;
+import static org.mockito.Mockito.verify;
 
 @FetcherTest
 class FulltextFetchersTest {
@@ -73,5 +78,57 @@ class FulltextFetchersTest {
         FulltextFetchers fetchers = new FulltextFetchers(Set.of(finderLow, finderHigh));
 
         assertEquals(Optional.of(highUrl), fetchers.findFullTextPDF(entry));
+    }
+
+    @Test
+    void findFullTextByDOIDerivedFromTitle() throws Exception {
+        // Entry with only a title,  no DOI, no file
+        BibEntry entry = new BibEntry()
+                .withField(StandardField.TITLE, "'To See or Not to See?' How Do Eye Movements Change Within Immersive Driving Environments");
+
+        //dummy pdf
+        URL expectedPdf = URLUtil.create("http://docs.oasis-open.org/wsbpel/2.0/OS/wsbpel-v2.0-OS.pdf");
+
+        // Mock fetcher that only returns a PDF if the entry has a DOI
+        // (proving CrossRef actually derived it)
+        FulltextFetcher mockFetcher = mock(FulltextFetcher.class);
+        when(mockFetcher.getTrustLevel()).thenReturn(TrustLevel.SOURCE);
+        when(mockFetcher.findFullText(argThat(e ->
+                e.getField(StandardField.DOI).isPresent()
+        ))).thenReturn(Optional.of(expectedPdf));
+
+        FulltextFetchers fetchers = new FulltextFetchers(Set.of(mockFetcher));
+        Optional<URL> result = fetchers.findFullTextPDF(entry);
+
+        //check if the URL is the same as expected
+        assertEquals(Optional.of(expectedPdf), result);
+
+        // Verify the exact DOI that was derived
+        ArgumentCaptor<BibEntry> captor = ArgumentCaptor.forClass(BibEntry.class);
+        verify(mockFetcher).findFullText(captor.capture());
+        String derivedDoi = captor.getValue().getField(StandardField.DOI).orElse("");
+        assertEquals("10.1145/2667239.2667268", derivedDoi.toLowerCase(Locale.ENGLISH));
+    }
+
+    @Test
+    void findFullTextUsingDoiNoFile() throws IOException, FetcherException {
+        // Entry with DOI but no file attached
+        BibEntry entry = new BibEntry(StandardEntryType.Article)
+                .withField(StandardField.DOI, "10.1000/test-doi-B");
+
+        // Mock fetcher to simulate finding PDF online
+        FulltextFetcher mockFetcher = mock(FulltextFetcher.class);
+        when(mockFetcher.getTrustLevel()).thenReturn(TrustLevel.SOURCE);  // Highest trust level
+
+        // Project standard dummy URL for testing
+        final URL expectedUrl = URLUtil.create("http://docs.oasis-open.org/wsbpel/2.0/OS/wsbpel-v2.0-OS.pdf");
+        when(mockFetcher.findFullText(entry)).thenReturn(Optional.of(expectedUrl));
+
+        // Put mock into FulltextFetchers instance
+        FulltextFetchers fetchers = new FulltextFetchers(Set.of(mockFetcher));
+
+        // The fetcher should successfully use the DOI to get the URL
+        assertEquals(Optional.of(expectedUrl), fetchers.findFullTextPDF(entry),
+                "The system should resolve the DOI to a PDF URL when no file is attached");
     }
 }

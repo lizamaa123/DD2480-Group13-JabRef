@@ -12,6 +12,7 @@ import java.util.function.BiConsumer;
 
 import javafx.collections.FXCollections;
 
+import org.jabref.gui.externalfiletype.ExternalFileType;
 import org.jabref.gui.externalfiletype.ExternalFileTypes;
 import org.jabref.gui.frame.ExternalApplicationsPreferences;
 import org.jabref.logic.FilePreferences;
@@ -183,10 +184,49 @@ class AutoSetFileLinksUtilTest {
         assertEquals(expected, Set.copyOf(matchedFiles));
     }
 
-    /// [utest->req~logic.externalfiles.file-transfer.auto-link~1]
+
     @Nested
     @DisplayName("linkAssociatedFiles")
     class linkAssociatedFiles {
+
+        @Nested
+        @DisplayName("whenFileAlreadyExists")
+        class whenFileAlreadyExists {
+
+            /*
+            * Test verifies that the auto-link logic in Jabref leaves existing and valid data alone.
+             */
+            @Test
+            @DisplayName("doNotChangeLinkWhenFileExistsAtLinkedLocation")
+            void doNotChangeLinkWhenFileExistsAtLinkedLocation(@TempDir Path root) throws Exception {
+                // Mock a database to look for PDFS & create a file on the disk
+                when(AutoSetFileLinksUtilTest.this.databaseContext.getFileDirectories(any())).thenReturn(Collections.singletonList(root));
+
+                String fileName = "TestFile.pdf";
+                Path testFile = root.resolve(fileName);
+                Files.createFile(testFile);
+
+                // Create a bibliography entry, entry has link and file exists at that link
+                BibEntry testEntry = new BibEntry(StandardEntryType.Article);
+                testEntry.setCitationKey("Test2026");
+                LinkedFile existingLink = new LinkedFile("Source", fileName, "PDF");
+                testEntry.setFiles(Collections.singletonList(existingLink));
+
+                AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(databaseContext, externalApplicationsPreferences, filePreferences, autoLinkPrefs);
+
+                // Verify that the JabRef didn't add a second copy of the same file or change path
+                util.linkAssociatedFiles(List.of(testEntry), onLinkedFilesUpdated);
+
+                assertEquals(1, testEntry.getFiles().size(), "Should still have exactly one file linked");
+                assertEquals(fileName, testEntry.getFiles().get(0).getLink(), "The link path should not have changed");
+
+                // Check files on the hard drive that should be linked to this entry, test file matches the entry's critera but is already linked.
+                // Hence result should be empty, otherwise Jabref would suggest user to add a file they already have.
+                Collection<LinkedFile> result = util.findAssociatedNotLinkedFiles(testEntry);
+
+                assertEquals(0, result.size(), "Should not suggest a file that is already correctly linked");
+            }
+        }
 
         @Nested
         @DisplayName("byCitationKeyOnly")
@@ -872,7 +912,183 @@ class AutoSetFileLinksUtilTest {
             }
         }
     }
+  
+    @Test
+    void IssueA_discoversLocalFile(@TempDir Path tempDir) throws Exception {
+        // The system will look for a file named TestName.pdf
+        String citationKey = "TestName";
 
+        // Create a BibEntry object - represents a single publication (like a row in a database)
+        // We do NOT use .withFiles() in main file, which means this entry currently has 0 files attached to it
+        BibEntry entry = new BibEntry(StandardEntryType.Article)
+                .withCitationKey(citationKey);
+
+        // We define the exact path where we want to place our fake PDF file
+        Path expectedPdf = tempDir.resolve(citationKey + ".pdf");
+
+        // Now TestName.pdf will exist in the folder.
+        Files.createFile(expectedPdf);
+
+        when(databaseContext.getFileDirectories(filePreferences)).thenReturn(List.of(tempDir));
+        when(autoLinkPrefs.getRegularExpression()).thenReturn(".*");
+
+        // Create a fake ExternalFileType object. The utility uses this to know what file extensions are allowed
+        ExternalFileType pdfFileType = mock(ExternalFileType.class);
+        
+        // Force our fake file type to act exactly like a PDF
+
+        when(pdfFileType.getExtension()).thenReturn("pdf");
+        when(pdfFileType.getName()).thenReturn("PDF");
+        when(externalApplicationsPreferences.getExternalFileTypes()).thenReturn(javafx.collections.FXCollections.observableSet(pdfFileType));
+
+        // Now that all our fake settings (mocks) are ready, we create the actual AutoSetFileLinksUtil
+        // We pass in all the mocked preferences so the utility thinks it is running inside the real JabRef application
+        AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(
+                databaseContext,
+                externalApplicationsPreferences,
+                filePreferences,
+                autoLinkPrefs
+        );
+
+        Collection<LinkedFile> foundFiles = util.findAssociatedNotLinkedFiles(entry);
+
+        assertEquals(1, foundFiles.size(), "Should discover exactly one matching file on the hard disk.");
+
+        LinkedFile discoveredFile = foundFiles.iterator().next();
+        // The discovered file link should match the created filename
+        assertEquals(citationKey + ".pdf", discoveredFile.getLink());
+    }
+
+    @Test
+    void issueH_ignoresAlreadyLinkedFile(@TempDir Path tempDir) throws Exception {
+        String citationKey = "TestName";
+
+        Path expectedPdg = tempDir.resolve(citationKey + ".pdf");
+        Files.createFile(expectedPdg);
+
+        // LinkedFile object that explicitly points to the PDF that was just created
+        // This represents a file that the user has already attached in the past
+        LinkedFile existingLink = new LinkedFile("", expectedPdg.toAbsolutePath().toString(), "PDF");
+
+        // Here we use .withFiles() to attach the file right from the start (unlike in test case A)
+        BibEntry entry = new BibEntry(StandardEntryType.Article)
+                .withCitationKey(citationKey)
+                .withFiles(List.of(existingLink));
+
+
+        // Search our fake hard drive folder
+        when(databaseContext.getFileDirectories(filePreferences)).thenReturn(List.of(tempDir));
+        // Allow any file name format to be matched
+        when(autoLinkPrefs.getRegularExpression()).thenReturn(".*");
+
+        // Configure the fake external file types so it is looking for PDFs
+        ExternalFileType pdfFileType = mock(ExternalFileType.class);
+        when(pdfFileType.getExtension()).thenReturn("pdf");
+        when(pdfFileType.getName()).thenReturn("PDF");
+        when(externalApplicationsPreferences.getExternalFileTypes()).thenReturn(javafx.collections.FXCollections.observableSet(pdfFileType));
+
+        AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(
+                databaseContext,
+                externalApplicationsPreferences,
+                filePreferences,
+                autoLinkPrefs
+        );
+
+        Collection<LinkedFile> foundFiles = util.findAssociatedNotLinkedFiles(entry);
+
+        // Because the PDF on the hard drive is already stored inside the BibEntry's file list, 
+        // the utility should filter it out. We expect exactly 0 new files to be discovered
+        assertEquals(0, foundFiles.size());
+    }
+  
+  @Test
+    void IssueA_discoversLocalFile(@TempDir Path tempDir) throws Exception {
+        // The system will look for a file named TestName.pdf
+        String citationKey = "TestName";
+
+        // Create a BibEntry object - represents a single publication (like a row in a database)
+        // We do NOT use .withFiles() in main file, which means this entry currently has 0 files attached to it
+        BibEntry entry = new BibEntry(StandardEntryType.Article)
+                .withCitationKey(citationKey);
+
+        // We define the exact path where we want to place our fake PDF file
+        Path expectedPdf = tempDir.resolve(citationKey + ".pdf");
+
+        // Now TestName.pdf will exist in the folder.
+        Files.createFile(expectedPdf);
+
+        when(databaseContext.getFileDirectories(filePreferences)).thenReturn(List.of(tempDir));
+        when(autoLinkPrefs.getRegularExpression()).thenReturn(".*");
+
+        // Create a fake ExternalFileType object. The utility uses this to know what file extensions are allowed
+        ExternalFileType pdfFileType = mock(ExternalFileType.class);
+        
+        // Force our fake file type to act exactly like a PDF
+
+        when(pdfFileType.getExtension()).thenReturn("pdf");
+        when(pdfFileType.getName()).thenReturn("PDF");
+        when(externalApplicationsPreferences.getExternalFileTypes()).thenReturn(javafx.collections.FXCollections.observableSet(pdfFileType));
+
+        // Now that all our fake settings (mocks) are ready, we create the actual AutoSetFileLinksUtil
+        // We pass in all the mocked preferences so the utility thinks it is running inside the real JabRef application
+        AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(
+                databaseContext,
+                externalApplicationsPreferences,
+                filePreferences,
+                autoLinkPrefs
+        );
+
+        Collection<LinkedFile> foundFiles = util.findAssociatedNotLinkedFiles(entry);
+
+        assertEquals(1, foundFiles.size(), "Should discover exactly one matching file on the hard disk.");
+
+        LinkedFile discoveredFile = foundFiles.iterator().next();
+        // The discovered file link should match the created filename
+        assertEquals(citationKey + ".pdf", discoveredFile.getLink());
+    }
+
+    @Test
+    void issueH_ignoresAlreadyLinkedFile(@TempDir Path tempDir) throws Exception {
+        String citationKey = "TestName";
+
+        Path expectedPdg = tempDir.resolve(citationKey + ".pdf");
+        Files.createFile(expectedPdg);
+
+        // LinkedFile object that explicitly points to the PDF that was just created
+        // This represents a file that the user has already attached in the past
+        LinkedFile existingLink = new LinkedFile("", expectedPdg.toAbsolutePath().toString(), "PDF");
+
+        // Here we use .withFiles() to attach the file right from the start (unlike in test case A)
+        BibEntry entry = new BibEntry(StandardEntryType.Article)
+                .withCitationKey(citationKey)
+                .withFiles(List.of(existingLink));
+
+
+        // Search our fake hard drive folder
+        when(databaseContext.getFileDirectories(filePreferences)).thenReturn(List.of(tempDir));
+        // Allow any file name format to be matched
+        when(autoLinkPrefs.getRegularExpression()).thenReturn(".*");
+
+        // Configure the fake external file types so it is looking for PDFs
+        ExternalFileType pdfFileType = mock(ExternalFileType.class);
+        when(pdfFileType.getExtension()).thenReturn("pdf");
+        when(pdfFileType.getName()).thenReturn("PDF");
+        when(externalApplicationsPreferences.getExternalFileTypes()).thenReturn(javafx.collections.FXCollections.observableSet(pdfFileType));
+
+        AutoSetFileLinksUtil util = new AutoSetFileLinksUtil(
+                databaseContext,
+                externalApplicationsPreferences,
+                filePreferences,
+                autoLinkPrefs
+        );
+
+        Collection<LinkedFile> foundFiles = util.findAssociatedNotLinkedFiles(entry);
+
+        // Because the PDF on the hard drive is already stored inside the BibEntry's file list, 
+        // the utility should filter it out. We expect exactly 0 new files to be discovered
+        assertEquals(0, foundFiles.size());
+    }
+  
     // Scenario D (#380)
     // BibEntry with no file field, no file on disk, no DOI, DOI cannot be determined
     // Expected: no file is linked
